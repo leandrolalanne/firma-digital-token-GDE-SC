@@ -11,6 +11,14 @@ desinstala cualquier versión previa y luego instala la nueva, en modo silencios
   solo paquetes MSI, y no por `UpgradeCode`, que en este MSI es el placeholder
   `{00000001-0001-0001-0001-000000000001}`)
 - MSI actual: `token-service_v4.msi` — ProductCode `{B8A8BA6C-F8FA-4551-86C3-449375C60103}`, ProductVersion `2.0.0`, x86
+- **v2** agrega las dependencias del firmador, ambas provistas por Modernización:
+  - **Java 8 x64** (`jre-8u503-windows-x64.exe`, Oracle). Se instala solo si no hay un Java 1.8 registrado
+    en `HKLM\SOFTWARE\JavaSoft` (vistas 64 y 32) con `bin\java.exe` presente. No se desinstalan otros Java.
+    Tiene que ser Java 8: `tokensign.exe` es un wrapper Launch4j y el firmador usa
+    `new SunPKCS11(InputStream)`, que no existe desde Java 9.
+  - **Certificados de las AC** (`Certificados AC Firma Digital Argentina.exe`, Inno Setup oficial, sin firma):
+    se corre siempre con `/VERYSILENT`; hace `certutil -addstore -enterprise` (2 raíz en Root, 20 en CA).
+    Se verifican las dos AC Raíz por thumbprint en `Cert:\LocalMachine\Root`.
 - Entregable principal: `Salida\FirmaDigital-Instalador.exe`, un único autoextraíble (7-Zip SFX)
   que se ejecuta con doble clic, pide UAC, muestra el asistente PSADT y reinicia con cuenta regresiva.
 - También sirve para GPO / Intune / SCCM (500 equipos) usando la carpeta `Certificados/` en modo Silent.
@@ -21,7 +29,7 @@ desinstala cualquier versión previa y luego instala la nueva, en modo silencios
 Certificados/
 ├── Invoke-AppDeployToolkit.exe     # Lanzador. No modificar.
 ├── Invoke-AppDeployToolkit.ps1     # ÚNICO script de lógica a editar.
-├── Files/                          # MSI a instalar.
+├── Files/                          # MSI del token, instalador de Java 8 y de certificados de las AC.
 ├── SupportFiles/                   # Archivos auxiliares (.cer, transforms .mst).
 ├── Config/                         # config.psd1 del toolkit.
 ├── Assets/, Strings/               # UI y textos. No tocar salvo pedido.
@@ -62,6 +70,12 @@ Salida/                             # Generado por el build. No editar a mano.
 | 1641 | OK, reinicio iniciado por el instalador |
 | 60000–68999 | Reservados por PSADT |
 | 69000–69999 | Códigos propios del proyecto |
+| 69002 | Quedó instalada una versión previa tras desinstalar |
+| 69003 | El token no quedó registrado en `appwiz.cpl` |
+| 69005 | No se pudo registrar el host de mensajería nativa en HKLM |
+| 69006 | `Lanzar.ps1` no pudo iniciar el instalador |
+| 69007 | No quedó instalado un Java 8 que `tokensign.exe` pueda encontrar |
+| 69008 | No quedaron instalados los certificados raíz de Firma Digital |
 
 ## Comandos
 
@@ -97,6 +111,9 @@ Logs: `C:\Windows\Logs\Software\`
 - [ ] Ejecutar Install dos veces seguidas no falla.
 - [ ] Código de salida 0 (o 3010) en todos los casos anteriores.
 - [ ] Log sin errores de severidad 3.
+- [ ] PC **sin** Java 8: queda Java 8 x64 instalado. PC **con** Java 8: no se reinstala.
+- [ ] Quedan las dos AC Raíz en `Cert:\LocalMachine\Root` y los intermedios en CA.
+- [ ] Firma real con token en GDE (Chrome y Firefox) con un usuario común.
 
 ## Al entregar cambios
 

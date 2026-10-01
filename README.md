@@ -1,11 +1,14 @@
-# Firma Digital / Token Service — reemplazo masivo de MSI
+# Firma Digital / Token Service — reemplazo masivo de MSI (v2)
 
-Desinstala toda versión previa del token de firma digital e instala
+Desinstala toda versión previa del token de firma digital, instala lo que el firmador necesita
+(Java 8 y los certificados de las AC de Firma Digital de Argentina), instala
 `token-service_v4.msi`, con log, y reinicia el equipo.
+
+> La v1 (solo el token) está en el repositorio `instalador-msi`, etiqueta `v1.0.0`.
 
 ## Instalador de un solo archivo (vía actual)
 
-**`Salida\FirmaDigital-Instalador.exe`**: un único archivo de unos 8 MB. Se le da doble clic y
+**`Salida\FirmaDigital-Instalador.exe`**: un único archivo de unos 74 MB. Se le da doble clic y
 el usuario solo tiene que aceptar el permiso de Windows.
 
 1. **SmartScreen** (el `.exe` no está firmado): *Más información → Ejecutar de todas formas*.
@@ -14,6 +17,12 @@ el usuario solo tiene que aceptar el permiso de Windows.
    - cierra `tokensign.exe` si está abierto;
    - desinstala **todo MSI que diga `GDE` o `Firma Digital`** (nombre en appwiz.cpl o
      carpeta de instalación; regex `\bGDE\b|Firma\s*Digital`);
+   - instala **Java 8 x64** (`jre-8u503-windows-x64.exe`) **solo si no hay un Java 8** registrado;
+     no toca otros Java. Tiene que ser Java 8: el firmador usa una API de PKCS#11 que no existe
+     desde Java 9. Log: `Java8_Install.log`;
+   - instala los **certificados de las AC de Firma Digital** con el instalador oficial
+     (`Certificados AC Firma Digital Argentina.exe`, en silencio; durante unos segundos se ve
+     una consola con `certutil`) y verifica que estén las dos AC Raíz. Log: `CertificadosAC_Install.log`;
    - instala `token-service_v4.msi` y verifica que quede registrado;
    - registra el host de mensajería nativa en HKLM (Chrome y Firefox, 64 y 32 bits).
 4. Muestra la ventana de reinicio: **cuenta regresiva de 60 s**, botón "Reiniciar ahora";
