@@ -1,11 +1,13 @@
 <#
 
 .SYNOPSIS
-Firma Digital / Token Service - desinstala toda version previa, instala token-service_v4.msi y reinicia.
+Firma Digital / Token Service - desinstala toda version previa, instala Java 8, los certificados de las AC
+de Firma Digital de Argentina y token-service_v4.msi, y reinicia.
 
 .DESCRIPTION
-- Install:   desinstala todo MSI cuyo nombre o carpeta haga referencia al token, instala el MSI de .\Files,
-             registra el host de mensajeria nativa en HKLM y reinicia el equipo.
+- Install:   desinstala todo MSI cuyo nombre o carpeta haga referencia al token; instala Java 8 x64 si no hay
+             un Java 8 que tokensign.exe pueda usar; instala los certificados de las AC (instalador oficial);
+             instala el MSI de .\Files, registra el host de mensajeria nativa en HKLM y reinicia el equipo.
              Interactive: muestra el progreso y una cuenta regresiva de 60 s antes de reiniciar.
              Silent:      no reinicia; devuelve 3010 para que lo haga el sistema de despliegue.
 - Uninstall: desinstala todo lo que coincida y borra las claves HKLM del host.
@@ -45,6 +47,8 @@ Codigos propios:
 - 69002: quedo instalada una version previa tras desinstalar
 - 69003: la instalacion no quedo registrada en appwiz.cpl
 - 69005: no se pudo registrar el host de mensajeria nativa en HKLM
+- 69007: no quedo instalado un Java 8 que tokensign.exe pueda encontrar
+- 69008: no quedaron instalados los certificados raiz de Firma Digital de Argentina
 
 .LINK
 https://psappdeploytoolkit.com
@@ -92,7 +96,7 @@ $adtSession = @{
     AppSuccessExitCodes = @(0)
     AppRebootExitCodes = @(1641, 3010)
     AppProcessesToClose = @()
-    AppScriptVersion = '1.0.0'
+    AppScriptVersion = '2.0.0'
     AppScriptDate = '2026-10-01'
     AppScriptAuthor = 'Modernizacion del Estado - Santa Cruz'
     RequireAdmin = $true
@@ -123,6 +127,81 @@ $NmhEntries = @(
     @{ Browser = 'Chrome'; Key = 'HKEY_LOCAL_MACHINE\SOFTWARE\Google\Chrome\NativeMessagingHosts\gcbatoken'; Json = 'cnmtoken.json' }
     @{ Browser = 'Firefox'; Key = 'HKEY_LOCAL_MACHINE\SOFTWARE\Mozilla\NativeMessagingHosts\gcbatoken'; Json = 'main.json' }
 )
+
+# Java: tokensign.exe es un wrapper Launch4j (Java >= 1.6, prefiere 32 bits y acepta 64) que busca el
+# runtime en HKLM\SOFTWARE\JavaSoft. Tiene que ser Java 8: el firmador crea el proveedor PKCS#11 con
+# new SunPKCS11(InputStream), constructor que no existe desde Java 9.
+$JavaInstaller = 'jre-8u503-windows-x64.exe'
+
+# Instalador oficial (Inno Setup) de los certificados de las AC de Firma Digital de Argentina. Corre un
+# script.bat con certutil -addstore -enterprise (2 raiz en Root, el resto en CA) y no deja entrada en appwiz.
+$CertInstaller = 'Certificados AC Firma Digital Argentina.exe'
+$RootCertThumbprints = @{
+    'D774180508C65136B80130B6AF0F002B131FD76B' = 'AC Raiz (2007)'
+    '887A1FE63A485392EA5F1526670ABC81E20009AD' = 'AC Raiz de la Republica Argentina (2016)'
+}
+
+function Get-Java8Home
+{
+    # Donde busca Launch4j: SOFTWARE\JavaSoft (vistas de 64 y 32 bits), JRE o JDK 1.8 con java.exe presente.
+    foreach ($base in @('HKEY_LOCAL_MACHINE\SOFTWARE\JavaSoft', 'HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\JavaSoft'))
+    {
+        foreach ($tipo in @('Java Runtime Environment', 'Java Development Kit'))
+        {
+            foreach ($key in @(Get-ChildItem -LiteralPath "Registry::$base\$tipo" -ErrorAction Ignore))
+            {
+                if ($key.PSChildName -notlike '1.8*') { continue }
+                $javaHome = [string]$key.GetValue('JavaHome')
+                if ($javaHome -and (Test-Path -LiteralPath (Join-Path $javaHome 'bin\java.exe')))
+                {
+                    return $javaHome
+                }
+            }
+        }
+    }
+    return $null
+}
+
+function Install-Java8
+{
+    $javaHome = Get-Java8Home
+    if ($javaHome)
+    {
+        Write-ADTLogEntry -Message "Java 8 ya instalado en $javaHome; no se instala."
+        return
+    }
+
+    Show-ADTInstallationProgress -StatusMessage 'Instalando Java 8...'
+    $log = Join-Path $adtSession.LogPath 'Java8_Install.log'
+    Start-ADTProcess -FilePath (Join-Path $adtSession.DirFiles $JavaInstaller) -ArgumentList "/s INSTALL_SILENT=1 AUTO_UPDATE=0 REBOOT=0 SPONSORS=0 WEB_ANALYTICS=0 /L $log"
+
+    $javaHome = Get-Java8Home
+    if (-not $javaHome)
+    {
+        Write-ADTLogEntry -Message "Java 8 no quedo registrado en HKLM\SOFTWARE\JavaSoft (ver $log)." -Severity 3
+        Close-ADTSession -ExitCode 69007
+    }
+    Write-ADTLogEntry -Message "Java 8 instalado en $javaHome."
+}
+
+function Install-RootCertificates
+{
+    # Se corre siempre: certutil -f es idempotente y asi entran las AC nuevas que traiga el instalador.
+    Show-ADTInstallationProgress -StatusMessage 'Instalando certificados de las Autoridades Certificantes de Firma Digital...'
+    $log = Join-Path $adtSession.LogPath 'CertificadosAC_Install.log'
+    Start-ADTProcess -FilePath (Join-Path $adtSession.DirFiles $CertInstaller) -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /LOG=`"$log`""
+
+    # Inno ignora el resultado de certutil: se verifica en el almacen raiz del equipo.
+    foreach ($thumb in $RootCertThumbprints.Keys)
+    {
+        if (-not (Test-Path -LiteralPath "Cert:\LocalMachine\Root\$thumb"))
+        {
+            Write-ADTLogEntry -Message "Falta el certificado raiz $($RootCertThumbprints[$thumb]) [$thumb]." -Severity 3
+            Close-ADTSession -ExitCode 69008
+        }
+        Write-ADTLogEntry -Message "Certificado raiz presente: $($RootCertThumbprints[$thumb]) [$thumb]."
+    }
+}
 
 function Get-NmhInstallDirectory
 {
@@ -221,6 +300,10 @@ function Install-ADTDeployment
     ## MARK: Install
     ##================================================
     $adtSession.InstallPhase = $adtSession.DeploymentType
+
+    ## Dependencias del firmador: Java 8 (solo si falta) y certificados de las AC.
+    Install-Java8
+    Install-RootCertificates
 
     Show-ADTInstallationProgress -StatusMessage 'Instalando Firma Digital - Token Service...'
     Start-ADTMsiProcess -Action Install -FilePath $MsiFileName -ArgumentList 'ALLUSERS=1'
