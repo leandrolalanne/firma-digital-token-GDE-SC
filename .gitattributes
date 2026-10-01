@@ -1,0 +1,4 @@
+# Guardar todo byte a byte, sin convertir finales de linea:
+# - los .ps1/.psm1/.psd1 del modulo PSADT llevan firma Authenticode y cualquier cambio la invalida;
+# - los scripts propios estan en CRLF para Windows PowerShell 5.1.
+* -text
