@@ -15,8 +15,10 @@ hace falta una cuenta de GitHub con acceso.
 2. Si Windows muestra "Windows protegió su PC": **Más información → Ejecutar de todas formas** (el instalador
    todavía no tiene firma digital).
 3. Aceptar el permiso de administrador.
-4. Esperar: el asistente muestra el progreso y no hace preguntas.
-5. Al terminar aparece una cuenta regresiva de 60 segundos y la PC se reinicia sola (o con "Reiniciar ahora").
+4. Esperar: el asistente muestra el progreso.
+5. **Desde la versión 3.0.0** (la que agrega los drivers de token), durante la instalación aparecen dos
+   ventanas de confirmación: hacer clic en **Aceptar** en las dos. La 1.0.0 y la 2.0.0 no piden nada.
+6. Al terminar aparece una cuenta regresiva de 60 segundos y la PC se reinicia sola (o con "Reiniciar ahora").
 
 Si algo falla aparece un cartel de error. El detalle queda en `C:\Windows\Logs\Software\`.
 

@@ -194,7 +194,8 @@ Detalle y evidencia en `PRUEBAS.md`.
 - [x] Release `v4.0.0` publicado (pre-release) con el `.exe` y su SHA-256.
 - [ ] Activar `build/release.yml` en `.github/workflows/` y verificar un release generado por Actions.
 - [ ] PC con versión previa del token: queda una sola entrada en `appwiz.cpl`, la nueva.
-- [ ] PC sin nada: instala todo sin ventanas que pidan clics; una 2.ª corrida saltea Java, drivers y extensiones.
+- [ ] PC sin nada: instala todo; solo aparecen las dos confirmaciones conocidas desde la 3.0.0 (ver README);
+      una 2.ª corrida saltea Java, drivers y extensiones.
 - [ ] Tras reiniciar, Chrome, Edge y Firefox muestran "Firma con Token GDE" instalada y no se puede quitar;
       las extensiones forzadas por otras directivas siguen ahí.
 - [ ] Edge en una PC **fuera de dominio**: confirmar que instala la extensión de la Chrome Web Store.
@@ -208,6 +209,8 @@ poner la 4.0.0 como recomendada en el README.
 
 ## Pendientes y observaciones
 
+- **Dos confirmaciones desde la 3.0.0**: al instalar aparecen dos ventanas que hay que aceptar (documentado
+  en el README). Falta identificar cuáles son (la 3.0.0 agregó los drivers de token) y si se pueden evitar.
 - **Firma del `.exe`**: se publica sin firmar. Opciones en `docs/NOTAS-TECNICAS.md`.
 - **Licencia SafeNet**: el `.txt` de SITEPRO está a nombre del Colegio de Abogados de la Provincia de Buenos
   Aires (1 puesto). Se usa por decisión del área; conviene regularizarla.

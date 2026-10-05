@@ -34,7 +34,9 @@ Falta (criterios de aceptación de la 4.0.0):
 | --- | --- | --- | --- |
 | 2026-10-01 12:48 | Sin token, sin Java, sin drivers | Instaló Java 8u503, certificados (AC Raíz verificadas), SafeNet 10.8, ePass2003, LMCryptoIDE y el token, en 72 s | 3010 |
 
-- Log sin entradas de severidad 2 ni 3. Sin ventanas que pidieran clics.
+- Log sin entradas de severidad 2 ni 3.
+- Durante la instalación aparecen **dos ventanas de confirmación** que hay que aceptar (informado por el
+  usuario; documentado en el README). Desde esta versión el instalador ya no es 100 % desatendido.
 - Nombres en Programas y características: `SafeNet Authentication Client 10.8` (10.8.259.0), `ePass2003`
   (1.1.22.831), `LMCryptoIDE versión 2.2.26.324` (clave `{F72BDB06-...}_is1`).
 - Antes, sin instalar: detección de drivers con casos simulados (igual/mayor saltea, menor actualiza, versión
