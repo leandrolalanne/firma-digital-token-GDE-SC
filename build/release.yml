@@ -1,0 +1,68 @@
+name: Release
+
+# Al pushear un tag vX.Y.Z genera el instalador de esa version y crea el release en GitHub con el .exe
+# adjunto. Las notas salen de la seccion [X.Y.Z] de CHANGELOG.md. Un tag con sufijo (vX.Y.Z-rc.1) se
+# publica como pre-release.
+#
+# PARA ACTIVARLO: copiar este archivo a .github/workflows/release.yml y subirlo. GitHub exige que la sesion
+# tenga el permiso "workflow" para subir archivos de .github/workflows/:
+#     gh auth refresh -h github.com -s workflow
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build y release
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Asegurar 7-Zip
+        shell: powershell
+        run: |
+          if (-not (Test-Path "$env:ProgramFiles\7-Zip\7z.exe")) {
+            choco install 7zip --yes --no-progress
+          }
+          & "$env:ProgramFiles\7-Zip\7z.exe" i | Select-Object -First 3
+
+      - name: Build del instalador
+        shell: powershell
+        run: .\build\build.ps1 -Version $env:TAG
+
+      - name: Notas del release desde CHANGELOG.md
+        shell: powershell
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          $lineas = Get-Content -Path CHANGELOG.md -Encoding UTF8
+          $indice = -1
+          for ($i = 0; $i -lt $lineas.Count; $i++) { if ($lineas[$i] -match ('^## \[' + [regex]::Escape($version) + '\]')) { $indice = $i; break } }
+          if ($indice -lt 0) { throw "CHANGELOG.md no tiene la seccion [$version]." }
+          $cuerpo = @()
+          for ($i = $indice + 1; $i -lt $lineas.Count; $i++) {
+            if ($lineas[$i] -match '^## \[' -or $lineas[$i] -match '^\[[^\]]+\]: ') { break }
+            $cuerpo += $lineas[$i]
+          }
+          $exe = Get-Item -Path "dist\firma-digital-token-GDE-SC-$version.exe"
+          $hash = (Get-FileHash -Path $exe.FullName -Algorithm SHA256).Hash
+          $notas = ($cuerpo -join "`n").Trim() + "`n`n---`n" + ('SHA-256 de `{0}`: `{1}`' -f $exe.Name, $hash)
+          [System.IO.File]::WriteAllText("$PWD\dist\notas.md", $notas, (New-Object System.Text.UTF8Encoding $false))
+
+      - name: Crear release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          $exe = "dist\firma-digital-token-GDE-SC-$version.exe"
+          $extra = @()
+          if ($version -match '-') { $extra += '--prerelease' }
+          gh release create $env:TAG $exe --title $env:TAG --notes-file dist\notas.md @extra
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

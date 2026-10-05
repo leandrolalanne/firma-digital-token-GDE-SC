@@ -1,2 +1,2 @@
-# Originales del proveedor de drivers: no se empaquetan ni se versionan (ver README).
-Token Drivers/
+# Salida del build (instaladores y paquetes por variante): se publican como adjuntos del release.
+dist/

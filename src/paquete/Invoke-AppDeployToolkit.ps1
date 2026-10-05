@@ -1,18 +1,27 @@
 <#
 
 .SYNOPSIS
-Firma Digital / Token Service - desinstala toda version previa, instala Java 8, los certificados de las AC
-de Firma Digital de Argentina, los drivers de token (SafeNet, Feitian ePass2003, Longmai mToken) y
-token-service_v4.msi, y reinicia.
+FirmaDigitalSC - desinstala toda version previa del token de Firma Digital, instala las dependencias que
+correspondan a la variante y token-service_v4.msi, y reinicia.
 
 .DESCRIPTION
-- Install:   desinstala todo MSI cuyo nombre o carpeta haga referencia al token; instala Java 8 x64 si no hay
-             un Java 8 que tokensign.exe pueda usar; instala los certificados de las AC (instalador oficial);
-             instala los drivers de token que falten (se saltea cada uno si ya esta esa version o una mayor);
-             instala el MSI de .\Files, registra el host de mensajeria nativa en HKLM y reinicia el equipo.
+Un solo script para las cuatro variantes. build\build.ps1 escribe SupportFiles\Variante.psd1 (nombre,
+version y componentes) y copia a .\Files solo los instaladores de esa variante:
+- Basico:      Token.
+- Java:        Token + Java8 + CertificadosAC.
+- Tokens:      Token + Java8 + CertificadosAC + DriversToken.
+- Extensiones: Token + Java8 + CertificadosAC + DriversToken + Extensiones.
+
+- Install:   desinstala todo MSI cuyo nombre o carpeta haga referencia al token; [Java8] instala Java 8 x64 si
+             no hay un Java 8 que tokensign.exe pueda usar; [CertificadosAC] instala los certificados de las AC
+             (instalador oficial); [DriversToken] instala los drivers de token que falten (se saltea cada uno
+             si ya esta esa version o una mayor); instala el MSI de .\Files, registra el host de mensajeria
+             nativa en HKLM (Chrome, Edge, Firefox); [Extensiones] fuerza por directiva la extension
+             "Firma con Token GDE" en Chrome, Edge y Firefox; y reinicia el equipo.
              Interactive: muestra el progreso y una cuenta regresiva de 60 s antes de reiniciar.
              Silent:      no reinicia; devuelve 3010 para que lo haga el sistema de despliegue.
-- Uninstall: desinstala todo lo que coincida y borra las claves HKLM del host.
+- Uninstall: desinstala todo lo que coincida, borra las claves HKLM del host y quita la extension de las
+             directivas de los navegadores (solo su entrada).
 - Repair:    repara el MSI y vuelve a registrar el host en HKLM.
 
 .PARAMETER DeploymentType
@@ -52,6 +61,8 @@ Codigos propios:
 - 69007: no quedo instalado un Java 8 que tokensign.exe pueda encontrar
 - 69008: no quedaron instalados los certificados raiz de Firma Digital de Argentina
 - 69009: un driver de token no aparece en appwiz.cpl despues de instalarlo
+- 69010: falta SupportFiles\Variante.psd1 (el paquete no se genero con build\build.ps1)
+- 69011: no se pudo forzar la extension de Firma Digital en Chrome, Edge o Firefox
 
 .LINK
 https://psappdeploytoolkit.com
@@ -86,6 +97,17 @@ param
 ## MARK: Variables
 ##================================================
 
+# Variante del paquete: la escribe build\build.ps1 (Nombre, Version y Componentes).
+try
+{
+    $Variante = Import-PowerShellDataFile -LiteralPath "$PSScriptRoot\SupportFiles\Variante.psd1" -ErrorAction Stop
+}
+catch
+{
+    $Host.UI.WriteErrorLine("Falta SupportFiles\Variante.psd1: el paquete se genera con build\build.ps1.")
+    exit 69010
+}
+
 # Zero-Config MSI support is provided when "AppName" is null or empty.
 # By setting the "AppName" property, Zero-Config MSI will be disabled.
 $adtSession = @{
@@ -99,7 +121,7 @@ $adtSession = @{
     AppSuccessExitCodes = @(0)
     AppRebootExitCodes = @(1641, 3010)
     AppProcessesToClose = @()
-    AppScriptVersion = '3.0.0'
+    AppScriptVersion = $Variante.Version
     AppScriptDate = '2026-10-01'
     AppScriptAuthor = 'Modernizacion del Estado - Santa Cruz'
     RequireAdmin = $true
@@ -125,11 +147,26 @@ $PreviousAppFilter = { $_.WindowsInstaller -and ($_.DisplayName -match $Previous
 
 # El MSI registra el host de mensajeria nativa en HKCU del usuario que instala; en SYSTEM o
 # con credenciales de otro admin la firma no anda para el usuario real. Se replica en HKLM.
+# Edge lee su propia clave; usa cnmtoken.json porque instala la extension de la Chrome Web Store (mismo ID).
 $NmhFolderName = 'GCBA Firma Digital'
 $NmhEntries = @(
     @{ Browser = 'Chrome'; Key = 'HKEY_LOCAL_MACHINE\SOFTWARE\Google\Chrome\NativeMessagingHosts\gcbatoken'; Json = 'cnmtoken.json' }
+    @{ Browser = 'Edge'; Key = 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Edge\NativeMessagingHosts\gcbatoken'; Json = 'cnmtoken.json' }
     @{ Browser = 'Firefox'; Key = 'HKEY_LOCAL_MACHINE\SOFTWARE\Mozilla\NativeMessagingHosts\gcbatoken'; Json = 'main.json' }
 )
+
+# Extensiones "Firma con Token GDE", forzadas por directiva: cada navegador la baja de su tienda al abrirse.
+# Chrome y Edge: la de la Chrome Web Store (su ID es el que admite cnmtoken.json en allowed_origins).
+# Firefox: la de addons.mozilla.org (su ID es el que admite main.json en allowed_extensions).
+$ChromeExtensionId = 'maddemndndajaiilmnjoocajgkpmlael'
+$ChromeUpdateUrl = 'https://clients2.google.com/service/update2/crx'
+$ForcelistKeys = @(
+    @{ Browser = 'Chrome'; Key = 'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist' }
+    @{ Browser = 'Edge'; Key = 'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist' }
+)
+$FirefoxPolicyKey = 'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Mozilla\Firefox'
+$FirefoxExtensionId = 'firma.token@gde.gob.ar'
+$FirefoxInstallUrl = 'https://addons.mozilla.org/firefox/downloads/latest/firma-con-token-gde/latest.xpi'
 
 # Java: tokensign.exe es un wrapper Launch4j (Java >= 1.6, prefiere 32 bits y acepta 64) que busca el
 # runtime en HKLM\SOFTWARE\JavaSoft. Tiene que ser Java 8: el firmador crea el proveedor PKCS#11 con
@@ -363,6 +400,110 @@ function Uninstall-PreviousApps
     Write-ADTLogEntry -Message 'Desinstalacion de versiones previas verificada.'
 }
 
+function Get-ForcelistEntryName
+{
+    # Nombre del valor (1, 2, 3...) que ya fuerza la extension en la lista del navegador, o $null.
+    param ([Parameter(Mandatory = $true)] [System.String]$Key)
+
+    $valores = Get-ADTRegistryKey -LiteralPath $Key
+    if (-not $valores) { return $null }
+    foreach ($p in $valores.PSObject.Properties)
+    {
+        if ([string]$p.Value -like "$ChromeExtensionId*") { return $p.Name }
+    }
+    return $null
+}
+
+function Get-FirefoxExtensionSettings
+{
+    # Politica ExtensionSettings de Firefox (JSON) como objeto; vacio si no existe. $null si no es JSON valido.
+    $actual = @(Get-ADTRegistryKey -LiteralPath $FirefoxPolicyKey -Name 'ExtensionSettings') -join "`n"
+    if ([string]::IsNullOrWhiteSpace($actual)) { return New-Object -TypeName PSObject }
+    try { return ($actual | ConvertFrom-Json) } catch { return $null }
+}
+
+function Install-BrowserExtensions
+{
+    Show-ADTInstallationProgress -StatusMessage 'Configurando la extension de Firma Digital en Chrome, Edge y Firefox...'
+
+    # Chrome y Edge: lista de extensiones forzadas. Se agrega en el primer numero libre sin tocar otras entradas.
+    foreach ($f in $ForcelistKeys)
+    {
+        $nombre = Get-ForcelistEntryName -Key $f.Key
+        if ($nombre)
+        {
+            Write-ADTLogEntry -Message "$($f.Browser): la extension ya esta forzada ($($f.Key)\$nombre)."
+            continue
+        }
+        $usados = @()
+        $valores = Get-ADTRegistryKey -LiteralPath $f.Key
+        if ($valores) { $usados = @($valores.PSObject.Properties.Name) }
+        $n = 1
+        while ($usados -contains [string]$n) { $n++ }
+        Set-ADTRegistryKey -LiteralPath $f.Key -Name ([string]$n) -Value "$ChromeExtensionId;$ChromeUpdateUrl" -Type String
+
+        if (-not (Get-ForcelistEntryName -Key $f.Key))
+        {
+            Write-ADTLogEntry -Message "$($f.Browser): no se pudo forzar la extension en $($f.Key)." -Severity 3
+            Close-ADTSession -ExitCode 69011
+        }
+        Write-ADTLogEntry -Message "$($f.Browser): extension $ChromeExtensionId forzada ($($f.Key)\$n)."
+    }
+
+    # Firefox: politica ExtensionSettings (JSON). Se agrega o corrige solo la entrada de la extension.
+    $settings = Get-FirefoxExtensionSettings
+    if ($null -eq $settings)
+    {
+        Write-ADTLogEntry -Message "Firefox: ExtensionSettings en $FirefoxPolicyKey no es JSON valido; no se modifica." -Severity 3
+        Close-ADTSession -ExitCode 69011
+    }
+    $entrada = $settings.PSObject.Properties[$FirefoxExtensionId]
+    if ($entrada -and $entrada.Value.installation_mode -eq 'force_installed' -and $entrada.Value.install_url -eq $FirefoxInstallUrl)
+    {
+        Write-ADTLogEntry -Message "Firefox: la extension $FirefoxExtensionId ya esta forzada."
+        return
+    }
+    $settings | Add-Member -NotePropertyName $FirefoxExtensionId -NotePropertyValue ([pscustomobject]@{ installation_mode = 'force_installed'; install_url = $FirefoxInstallUrl }) -Force
+    Set-ADTRegistryKey -LiteralPath $FirefoxPolicyKey -Name 'ExtensionSettings' -Value ($settings | ConvertTo-Json -Depth 10 -Compress) -Type String
+
+    $verificado = Get-FirefoxExtensionSettings
+    if (-not $verificado -or $verificado.PSObject.Properties[$FirefoxExtensionId].Value.installation_mode -ne 'force_installed')
+    {
+        Write-ADTLogEntry -Message "Firefox: no se pudo forzar la extension en $FirefoxPolicyKey." -Severity 3
+        Close-ADTSession -ExitCode 69011
+    }
+    Write-ADTLogEntry -Message "Firefox: extension $FirefoxExtensionId forzada ($FirefoxPolicyKey\ExtensionSettings)."
+}
+
+function Remove-BrowserExtensions
+{
+    # Quita solo las entradas de la extension de Firma Digital; las de otras extensiones quedan.
+    foreach ($f in $ForcelistKeys)
+    {
+        $nombre = Get-ForcelistEntryName -Key $f.Key
+        if ($nombre)
+        {
+            Remove-ADTRegistryKey -LiteralPath $f.Key -Name $nombre
+            Write-ADTLogEntry -Message "$($f.Browser): extension quitada de la lista forzada ($($f.Key)\$nombre)."
+        }
+    }
+
+    $settings = Get-FirefoxExtensionSettings
+    if ($settings -and $settings.PSObject.Properties[$FirefoxExtensionId])
+    {
+        $settings.PSObject.Properties.Remove($FirefoxExtensionId)
+        if (@($settings.PSObject.Properties).Count -eq 0)
+        {
+            Remove-ADTRegistryKey -LiteralPath $FirefoxPolicyKey -Name 'ExtensionSettings'
+        }
+        else
+        {
+            Set-ADTRegistryKey -LiteralPath $FirefoxPolicyKey -Name 'ExtensionSettings' -Value ($settings | ConvertTo-Json -Depth 10 -Compress) -Type String
+        }
+        Write-ADTLogEntry -Message "Firefox: extension $FirefoxExtensionId quitada de ExtensionSettings."
+    }
+}
+
 function Install-ADTDeployment
 {
     [CmdletBinding()]
@@ -374,6 +515,8 @@ function Install-ADTDeployment
     ## MARK: Pre-Install
     ##================================================
     $adtSession.InstallPhase = "Pre-$($adtSession.DeploymentType)"
+
+    Write-ADTLogEntry -Message "Variante $($Variante.Nombre) $($Variante.Version) - componentes: $($Variante.Componentes -join ', ')."
 
     ## Cerrar el host del token sin preguntar: si esta en uso traba la desinstalacion.
     Show-ADTInstallationWelcome -CloseProcesses @{ Name = 'tokensign'; Description = 'Firma Digital (tokensign)' } -Silent -CheckDiskSpace
@@ -387,10 +530,11 @@ function Install-ADTDeployment
     ##================================================
     $adtSession.InstallPhase = $adtSession.DeploymentType
 
-    ## Dependencias del firmador: Java 8 (solo si falta), certificados de las AC y drivers de token (los que falten).
-    Install-Java8
-    Install-RootCertificates
-    Install-TokenDrivers
+    ## Dependencias del firmador segun la variante: Java 8 (solo si falta), certificados de las AC y
+    ## drivers de token (los que falten).
+    if ($Variante.Componentes -contains 'Java8') { Install-Java8 }
+    if ($Variante.Componentes -contains 'CertificadosAC') { Install-RootCertificates }
+    if ($Variante.Componentes -contains 'DriversToken') { Install-TokenDrivers }
 
     Show-ADTInstallationProgress -StatusMessage 'Instalando Firma Digital - Token Service...'
     Start-ADTMsiProcess -Action Install -FilePath $MsiFileName -ArgumentList 'ALLUSERS=1'
@@ -416,8 +560,9 @@ function Install-ADTDeployment
         Write-ADTLogEntry -Message 'Hay mas de una entrada en appwiz.cpl. Revisar $PreviousAppPattern.' -Severity 2
     }
 
-    Show-ADTInstallationProgress -StatusMessage 'Registrando Firma Digital en Chrome y Firefox...'
+    Show-ADTInstallationProgress -StatusMessage 'Registrando Firma Digital en Chrome, Edge y Firefox...'
     Register-NmhHost
+    if ($Variante.Componentes -contains 'Extensiones') { Install-BrowserExtensions }
     Close-ADTInstallationProgress
 
     ## Interactive: cuenta regresiva de 60 s y reinicio forzado al terminar (boton "Reiniciar ahora").
@@ -461,6 +606,8 @@ function Uninstall-ADTDeployment
         Remove-ADTRegistryKey -LiteralPath $entry.Key -Wow6432Node
     }
     Write-ADTLogEntry -Message 'Claves HKLM del host de mensajeria nativa eliminadas.'
+
+    Remove-BrowserExtensions
 }
 
 function Repair-ADTDeployment
