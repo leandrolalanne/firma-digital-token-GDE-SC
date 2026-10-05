@@ -2,11 +2,13 @@
 
 .SYNOPSIS
 Firma Digital / Token Service - desinstala toda version previa, instala Java 8, los certificados de las AC
-de Firma Digital de Argentina y token-service_v4.msi, y reinicia.
+de Firma Digital de Argentina, los drivers de token (SafeNet, Feitian ePass2003, Longmai mToken) y
+token-service_v4.msi, y reinicia.
 
 .DESCRIPTION
 - Install:   desinstala todo MSI cuyo nombre o carpeta haga referencia al token; instala Java 8 x64 si no hay
              un Java 8 que tokensign.exe pueda usar; instala los certificados de las AC (instalador oficial);
+             instala los drivers de token que falten (se saltea cada uno si ya esta esa version o una mayor);
              instala el MSI de .\Files, registra el host de mensajeria nativa en HKLM y reinicia el equipo.
              Interactive: muestra el progreso y una cuenta regresiva de 60 s antes de reiniciar.
              Silent:      no reinicia; devuelve 3010 para que lo haga el sistema de despliegue.
@@ -49,6 +51,7 @@ Codigos propios:
 - 69005: no se pudo registrar el host de mensajeria nativa en HKLM
 - 69007: no quedo instalado un Java 8 que tokensign.exe pueda encontrar
 - 69008: no quedaron instalados los certificados raiz de Firma Digital de Argentina
+- 69009: un driver de token no aparece en appwiz.cpl despues de instalarlo
 
 .LINK
 https://psappdeploytoolkit.com
@@ -96,7 +99,7 @@ $adtSession = @{
     AppSuccessExitCodes = @(0)
     AppRebootExitCodes = @(1641, 3010)
     AppProcessesToClose = @()
-    AppScriptVersion = '2.0.0'
+    AppScriptVersion = '3.0.0'
     AppScriptDate = '2026-10-01'
     AppScriptAuthor = 'Modernizacion del Estado - Santa Cruz'
     RequireAdmin = $true
@@ -203,6 +206,89 @@ function Install-RootCertificates
     }
 }
 
+# Drivers de token (todos, porque en una PC puede haber usuarios con tokens de distintas marcas).
+# Match identifica la entrada en appwiz.cpl; si ya hay una con version >= Version, se saltea.
+# SafeNet: MSI 10.8 y licencia tal cual vienen dentro del paquete del proveedor (SITEPRO,
+# "WINDOWS - SafeNet5110+-SAC_10_8.exe"); la licencia se aplica con PROP_LICENSE_FILE.
+$TokenDrivers = @(
+    @{
+        Name = 'SafeNet Authentication Client'
+        Version = '10.8.259.0'
+        Match = { $_.DisplayName -like 'SafeNet Authentication Client*' }
+        Msi = 'Drivers\sac-10.8-x64-10.8.msi'
+        License = 'Drivers\SITEPRO_ONE SEAT_End User License Certificate.txt'
+    }
+    @{
+        Name = 'Feitian ePass2003'
+        Version = '1.1.22.831'
+        Match = { $_.DisplayName -match 'ePass2003' }
+        Exe = 'Drivers\MSePass2003_Win_Spanish_V1.1.22.831.exe'
+        Arguments = '/S'
+    }
+    @{
+        Name = 'Longmai mToken CryptoID'
+        Version = '2.2.26.324'
+        Match = { $_.PSChildName -eq '{F72BDB06-FA8C-4B07-89A0-ADB1ADC791F7}_is1' }
+        Exe = 'Drivers\MSCryptoID-FIPS140-3_Win_Spanish_V2.2.26.324.exe'
+        Arguments = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /LOG="{0}"'
+    }
+)
+
+function Get-TokenDriverInstalled
+{
+    param ([Parameter(Mandatory = $true)] [System.Collections.Hashtable]$Driver)
+
+    # Devuelve la entrada de appwiz.cpl si ya esta instalada la version pedida o una mas nueva.
+    foreach ($app in @(Get-ADTApplication -FilterScript $Driver.Match))
+    {
+        $instalada = $null
+        if (-not [System.Version]::TryParse([string]$app.DisplayVersion, [ref]$instalada))
+        {
+            Write-ADTLogEntry -Message "$($Driver.Name): version instalada '$($app.DisplayVersion)' no comparable; se considera instalado."
+            return $app
+        }
+        if ($instalada -ge [System.Version]$Driver.Version)
+        {
+            return $app
+        }
+        Write-ADTLogEntry -Message "$($Driver.Name): instalada $($app.DisplayVersion), menor que $($Driver.Version); se actualiza."
+    }
+    return $null
+}
+
+function Install-TokenDrivers
+{
+    foreach ($driver in $TokenDrivers)
+    {
+        $app = Get-TokenDriverInstalled -Driver $driver
+        if ($app)
+        {
+            Write-ADTLogEntry -Message "$($driver.Name) ya instalado ($($app.DisplayName) $($app.DisplayVersion)); no se instala."
+            continue
+        }
+
+        Show-ADTInstallationProgress -StatusMessage "Instalando driver de token: $($driver.Name)..."
+        if ($driver.ContainsKey('Msi'))
+        {
+            $license = Join-Path $adtSession.DirFiles $driver.License
+            Start-ADTMsiProcess -Action Install -FilePath (Join-Path $adtSession.DirFiles $driver.Msi) -AdditionalArgumentList "PROP_LICENSE_FILE=`"$license`""
+        }
+        else
+        {
+            $log = Join-Path $adtSession.LogPath ('{0}_Install.log' -f ($driver.Name -replace '\s', ''))
+            Start-ADTProcess -FilePath (Join-Path $adtSession.DirFiles $driver.Exe) -ArgumentList ($driver.Arguments -f $log)
+        }
+
+        $app = Get-TokenDriverInstalled -Driver $driver
+        if (-not $app)
+        {
+            Write-ADTLogEntry -Message "$($driver.Name) no aparece instalado en appwiz.cpl despues de instalar." -Severity 3
+            Close-ADTSession -ExitCode 69009
+        }
+        Write-ADTLogEntry -Message "$($driver.Name) instalado: $($app.DisplayName) $($app.DisplayVersion)."
+    }
+}
+
 function Get-NmhInstallDirectory
 {
     # Primero lo que declara el MSI; si no, se sondea. El MSI es x86: en Windows x64 va a Program Files (x86).
@@ -301,9 +387,10 @@ function Install-ADTDeployment
     ##================================================
     $adtSession.InstallPhase = $adtSession.DeploymentType
 
-    ## Dependencias del firmador: Java 8 (solo si falta) y certificados de las AC.
+    ## Dependencias del firmador: Java 8 (solo si falta), certificados de las AC y drivers de token (los que falten).
     Install-Java8
     Install-RootCertificates
+    Install-TokenDrivers
 
     Show-ADTInstallationProgress -StatusMessage 'Instalando Firma Digital - Token Service...'
     Start-ADTMsiProcess -Action Install -FilePath $MsiFileName -ArgumentList 'ALLUSERS=1'
