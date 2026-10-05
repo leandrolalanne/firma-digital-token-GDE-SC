@@ -2,8 +2,8 @@
 .SYNOPSIS
     Arma FirmaDigital-Instalador.exe: un unico autoextraible (7-Zip SFX) con el paquete PSADT
     de ..\Certificados y Lanzar.ps1. Al hacer doble clic pide UAC, extrae a %TEMP%, muestra
-    el asistente PSADT (desinstala, instala Java 8 si falta, certificados de las AC y el token,
-    registra) y reinicia con cuenta regresiva.
+    el asistente PSADT (desinstala, instala Java 8 si falta, certificados de las AC, drivers de
+    token que falten y el token, registra) y reinicia con cuenta regresiva.
 
 .DESCRIPTION
     - 7zSD.sfx sale del LZMA SDK 23.01 de 7-zip.org (dominio publico). No trae manifiesto,
@@ -37,6 +37,10 @@ $requeridos = @(
     (Join-Path $paquete 'Files\token-service_v4.msi')
     (Join-Path $paquete 'Files\jre-8u503-windows-x64.exe')
     (Join-Path $paquete 'Files\Certificados AC Firma Digital Argentina.exe')
+    (Join-Path $paquete 'Files\Drivers\sac-10.8-x64-10.8.msi')
+    (Join-Path $paquete 'Files\Drivers\SITEPRO_ONE SEAT_End User License Certificate.txt')
+    (Join-Path $paquete 'Files\Drivers\MSePass2003_Win_Spanish_V1.1.22.831.exe')
+    (Join-Path $paquete 'Files\Drivers\MSCryptoID-FIPS140-3_Win_Spanish_V2.2.26.324.exe')
 )
 foreach ($f in $requeridos) {
     if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { throw "Falta: $f" }
