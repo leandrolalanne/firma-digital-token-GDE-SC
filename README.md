@@ -4,8 +4,7 @@ Instalador que deja una PC con Windows 10 u 11 (64 bits) lista para **firmar con
 
 > [!WARNING]
 > **Herramienta en beta, de uso personal.** Por ahora la desarrolla y la mantiene una sola persona
-> ([@leandrolalanne](https://github.com/leandrolalanne)). No es una herramienta oficial ni tiene soporte de la
-> Secretaría de Estado de Modernización de Santa Cruz. Usarla bajo propia responsabilidad.
+> ([@leandrolalanne](https://github.com/leandrolalanne)). Usarla bajo propia responsabilidad.
 
 ## Descarga
 

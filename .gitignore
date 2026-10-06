@@ -1,2 +1,4 @@
 # Salida del build (instaladores y paquetes por variante): se publican como adjuntos del release.
 dist/
+# Configuracion personal de Claude Code.
+.claude/settings.local.json
