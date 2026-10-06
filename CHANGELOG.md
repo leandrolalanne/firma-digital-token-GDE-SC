@@ -7,6 +7,10 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 
 ## [Sin publicar]
 
+### Cambiado
+
+- README: aviso de que es una herramienta en beta, de uso personal y mantenida por una sola persona.
+
 ## [4.0.0] - 2026-10-05
 
 ### Agregado
